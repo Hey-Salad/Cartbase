@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "node-red-contrib-http-multipart": "^0.3.2"
+  }
+}
