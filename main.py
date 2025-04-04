@@ -7,12 +7,18 @@ from point_e.diffusion.sampler import PointCloudSampler
 from PIL import Image
 from point_e.diffusion.configs import DIFFUSION_CONFIGS, diffusion_from_config
 from point_e.models.configs import MODEL_CONFIGS, model_from_config
+from dotenv import load_dotenv
 
 
 
 app = FastAPI()
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/Users/asoga/Documents/delta-lore-455512-h7-d20d2824dd02.json"
+load_dotenv()
+
+credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+print("Credentials path:", credentials_path)
+
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
 client = storage.Client()
 bucket = client.bucket("recamera_3d_images")
 
