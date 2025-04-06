@@ -1,5 +1,7 @@
 import os
 import torch
+import io
+import random
 from fastapi import FastAPI, File, UploadFile
 from google.cloud import storage
 from point_e.models.download import load_checkpoint
@@ -65,3 +67,31 @@ async def upload_and_generate_3d(file: UploadFile = File(...)):
     blob.upload_from_filename(model_path)
 
     return {"message": "3D Model uploaded successfully!", "model_url": blob.public_url}
+
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Smart Food Inventory API"}
+
+def predict_freshness(image):
+    # Mocked freshness prediction
+    classes = ["Fresh", "Slightly Spoiled", "Spoiled"]
+    return random.choice(classes)
+
+@app.post("/detect-freshness/")
+async def detect_freshness(file: UploadFile = File(...)):
+    contents = await file.read()
+    image = Image.open(io.BytesIO(contents)).convert("RGB")
+
+    freshness_result = predict_freshness(image)
+
+    # Save and upload result to Google Cloud
+    result_filename = file.filename.replace(".jpg", "_freshness.txt")
+    result_path = f"temp/{result_filename}"
+
+    with open(result_path, "w") as result_file:
+        result_file.write(f"Freshness: {freshness_result}\n")
+
+    blob = bucket.blob(result_filename)
+    blob.upload_from_filename(result_path)
+
+    return {"freshness": freshness_result, "result_url": blob.public_url}
