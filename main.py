@@ -24,11 +24,15 @@ os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
 client = storage.Client()
 bucket = client.bucket("recamera_3d_images")
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.backends.mps.is_available():
+    device = torch.device("mps")  # Apple GPU
+elif torch.cuda.is_available():
+    device = torch.device("cuda")  # NVIDIA GPU
+else:
+    device = torch.device("cpu")  # Fallback
+    
 print("Using device:", device)
 base_model =  model_from_config(MODEL_CONFIGS["base1B"], device)
-#model = load_checkpoint("base1B", device=device)
-
 base_diffusion = diffusion_from_config(DIFFUSION_CONFIGS['base300M'])
 
 
@@ -41,7 +45,7 @@ sampler = PointCloudSampler(
     guidance_scale=[3.0],
     use_karras=[True],
     karras_steps=[64],
-     sigma_min=[1e-3], 
+    sigma_min=[1e-3], 
     sigma_max=[120],  
     s_churn=[3],       
     model_kwargs_key_filter=["*"],  
@@ -62,7 +66,7 @@ async def upload_and_generate_3d(file: UploadFile = File(...)):
     with open(model_path, "wb") as model_file:
         torch.save(point_cloud, model_file)
 
-    # Upload to Google Cloud Storage
+    # Upload the 3D model to Google Cloud Storage
     blob = bucket.blob(file.filename.replace('.jpg', '.ply'))
     blob.upload_from_filename(model_path)
 
