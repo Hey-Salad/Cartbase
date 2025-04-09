@@ -1,85 +1,117 @@
 import os
-import torch
 import io
 import random
 import base64
+import torch
 from fastapi import FastAPI, File, UploadFile
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from google.cloud import storage
 from pydantic import BaseModel
-from point_e.models.download import load_checkpoint
-from point_e.diffusion.sampler import PointCloudSampler
 from PIL import Image
-from point_e.diffusion.configs import DIFFUSION_CONFIGS, diffusion_from_config
-from point_e.models.configs import MODEL_CONFIGS, model_from_config
 from dotenv import load_dotenv
-
-
-
+from tqdm.auto import tqdm
+from point_e.diffusion.sampler import PointCloudSampler
+from point_e.diffusion.configs import DIFFUSION_CONFIGS
+from point_e.util.plotting import plot_point_cloud
+from point_e.models.configs import MODEL_CONFIGS, model_from_config
+from point_e.models.download import load_checkpoint
+from point_e.diffusion.configs import diffusion_from_config
+# --- Initialize FastAPI App ---
 app = FastAPI()
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
+@app.get("/", response_class=HTMLResponse)
+def read_root():
+    return FileResponse("static/index.html")
+
+@app.get("/ui", response_class=HTMLResponse)
+def serve_ui():
+    with open("static/index.html") as f:
+        return f.read()
+
+# --- Load Environment and Google Cloud Credentials ---
 load_dotenv()
-
 credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
 print("Credentials path:", credentials_path)
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = credentials_path
 client = storage.Client()
 bucket = client.bucket("recamera_3d_images")
+os.makedirs("temp", exist_ok=True)
 
+# --- Device Setup ---
 if torch.backends.mps.is_available():
-    device = torch.device("mps")  # Apple GPU
+    device = torch.device("mps")
 elif torch.cuda.is_available():
-    device = torch.device("cuda")  # NVIDIA GPU
+    device = torch.device("cuda")
 else:
-    device = torch.device("cpu")  # Fallback
-    
+    device = torch.device("cpu")
 print("Using device:", device)
-base_model =  model_from_config(MODEL_CONFIGS["base300M"], device)
-base_diffusion = diffusion_from_config(DIFFUSION_CONFIGS['base300M'])
 
+# --- Load Point-E Models (Corrected) ---
+base_name = 'base40M-imagevec'
 
+print('Loading base model...')
+base_model = model_from_config(MODEL_CONFIGS[base_name], device)
+base_model.load_state_dict(load_checkpoint(base_name, device))
+base_model.eval()
+base_diffusion = diffusion_from_config(DIFFUSION_CONFIGS[base_name])
+
+print('Loading upsampler model...')
+upsampler_model = model_from_config(MODEL_CONFIGS['upsample'], device)
+upsampler_model.load_state_dict(load_checkpoint('upsample', device))
+upsampler_model.eval()
+upsampler_diffusion = diffusion_from_config(DIFFUSION_CONFIGS['upsample'])
+
+# --- Point Cloud Sampler ---
 sampler = PointCloudSampler(
     device=device,
-    models=[base_model], 
-    diffusions=[base_diffusion], 
-    num_points=4096, 
+    models=[base_model, upsampler_model],
+    diffusions=[base_diffusion, upsampler_diffusion],
+    num_points=[1024, 4096 - 1024],
     aux_channels=['R', 'G', 'B'],
-    guidance_scale=[3.0],
-    use_karras=[True],
-    karras_steps=[64],
-    sigma_min=[1e-3], 
-    sigma_max=[120],  
-    s_churn=[3],       
-    model_kwargs_key_filter=["*"],  
+    guidance_scale=[3.0, 3.0],
 )
 
+# --- Upload Image and Generate 3D Point Cloud (.ply) ---
 @app.post("/upload/")
 async def upload_and_generate_3d(file: UploadFile = File(...)):
-    image_path = f"temp/{file.filename}"
-    with open(image_path, "wb") as img_file:
-        img_file.write(await file.read())
-    img = Image.open(image_path).convert("RGB")
+    try:
+        # Save the uploaded image
+        image_path = f"temp/{file.filename}"
+        with open(image_path, "wb") as img_file:
+            img_file.write(await file.read())
 
-    with torch.no_grad():
-        point_cloud = sampler.sample(img)
-    
-    # Save the generated 3D model
-    model_path = f"temp/{file.filename.replace('.jpg', '.ply')}"
-    with open(model_path, "wb") as model_file:
-        torch.save(point_cloud, model_file)
+        # Open and convert image
+        with Image.open(image_path) as img:
+            img = img.convert("RGB")
 
-    # Upload the 3D model to Google Cloud Storage
-    blob = bucket.blob(file.filename.replace('.jpg', '.ply'))
-    blob.upload_from_filename(model_path)
+            # Sample 3D point cloud
+            samples = None
+            for x in tqdm(sampler.sample_batch_progressive(batch_size=1, model_kwargs=dict(images=[img]))):
+                samples = x
 
-    return {"message": "3D Model uploaded successfully!", "model_url": blob.public_url}
+        # Extract point cloud and save to .ply
+        pc = sampler.output_to_point_clouds(samples)[0]
+        fig = plot_point_cloud(pc, grid_size=3, fixed_bounds=((-0.75, -0.75, -0.75),(0.75, 0.75, 0.75)))
 
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Smart Food Inventory API"}
+        base_name = os.path.splitext(os.path.basename(image_path))[0]
+        model_path = f"temp/{base_name}.ply"
+        pc.write_ply(model_path)
 
+        # Upload to GCS
+        blob = bucket.blob(os.path.basename(model_path))
+        blob.upload_from_filename(model_path)
+
+        return {"message": "3D Model uploaded successfully!", "model_url": blob.public_url}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# --- Mock Freshness Detection ---
 def predict_freshness(image):
-    # Mocked freshness prediction
     classes = ["Fresh", "Slightly Spoiled", "Spoiled"]
     return random.choice(classes)
 
@@ -90,10 +122,8 @@ async def detect_freshness(file: UploadFile = File(...)):
 
     freshness_result = predict_freshness(image)
 
-    # Save and upload result to Google Cloud
     result_filename = file.filename.replace(".jpg", "_freshness.txt")
     result_path = f"temp/{result_filename}"
-
     with open(result_path, "w") as result_file:
         result_file.write(f"Freshness: {freshness_result}\n")
 
@@ -102,34 +132,46 @@ async def detect_freshness(file: UploadFile = File(...)):
 
     return {"freshness": freshness_result, "result_url": blob.public_url}
 
+# --- Base64 Image Upload and 3D Model Generation ---
 class Base64Image(BaseModel):
     object: str
-    image: str  # Base64 image string, optionally with data URL prefix
+    image: str  # Base64 image string
 
 @app.post("/upload-base64/")
 async def upload_base64_image(data: Base64Image):
     try:
+        # Decode the base64 image data
         header, encoded = data.image.split(",", 1) if "," in data.image else ("", data.image)
         image_bytes = base64.b64decode(encoded)
 
-        os.makedirs("temp", exist_ok=True)
+        # Save the image to a temporary file
         filename = f"temp/{data.object}.jpg"
         with open(filename, "wb") as f:
             f.write(image_bytes)
 
-        img = Image.open(filename).convert("RGB")
+        # Open and convert image
+        with Image.open(filename) as img:
+            img = img.convert("RGB")
 
-        with torch.no_grad():
-            point_cloud = sampler.sample(img)
+            # Sample 3D point cloud
+            samples = None
+            for x in tqdm(sampler.sample_batch_progressive(batch_size=1, model_kwargs=dict(images=[img]))):
+                samples = x
 
-        model_path = filename.replace(".jpg", ".ply")
-        with open(model_path, "wb") as model_file:
-            torch.save(point_cloud, model_file)
+        # Extract point cloud and save to .ply
+        pc = sampler.output_to_point_clouds(samples)[0]
+        fig = plot_point_cloud(pc, grid_size=3, fixed_bounds=((-0.75, -0.75, -0.75), (0.75, 0.75, 0.75)))
 
-        blob = bucket.blob(model_path.split("/")[-1])
+        # Create the model path
+        model_path = f"temp/{data.object}.ply"
+        pc.write_ply(model_path)
+
+        # Upload the .ply file to Google Cloud Storage
+        blob = bucket.blob(os.path.basename(model_path))
         blob.upload_from_filename(model_path)
 
         return {"message": "3D Model uploaded from base64 successfully!", "model_url": blob.public_url}
 
     except Exception as e:
         return {"error": str(e)}
+
