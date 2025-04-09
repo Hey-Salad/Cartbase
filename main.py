@@ -2,8 +2,10 @@ import os
 import torch
 import io
 import random
+import base64
 from fastapi import FastAPI, File, UploadFile
 from google.cloud import storage
+from pydantic import BaseModel
 from point_e.models.download import load_checkpoint
 from point_e.diffusion.sampler import PointCloudSampler
 from PIL import Image
@@ -32,7 +34,7 @@ else:
     device = torch.device("cpu")  # Fallback
     
 print("Using device:", device)
-base_model =  model_from_config(MODEL_CONFIGS["base1B"], device)
+base_model =  model_from_config(MODEL_CONFIGS["base300M"], device)
 base_diffusion = diffusion_from_config(DIFFUSION_CONFIGS['base300M'])
 
 
@@ -99,3 +101,35 @@ async def detect_freshness(file: UploadFile = File(...)):
     blob.upload_from_filename(result_path)
 
     return {"freshness": freshness_result, "result_url": blob.public_url}
+
+class Base64Image(BaseModel):
+    object: str
+    image: str  # Base64 image string, optionally with data URL prefix
+
+@app.post("/upload-base64/")
+async def upload_base64_image(data: Base64Image):
+    try:
+        header, encoded = data.image.split(",", 1) if "," in data.image else ("", data.image)
+        image_bytes = base64.b64decode(encoded)
+
+        os.makedirs("temp", exist_ok=True)
+        filename = f"temp/{data.object}.jpg"
+        with open(filename, "wb") as f:
+            f.write(image_bytes)
+
+        img = Image.open(filename).convert("RGB")
+
+        with torch.no_grad():
+            point_cloud = sampler.sample(img)
+
+        model_path = filename.replace(".jpg", ".ply")
+        with open(model_path, "wb") as model_file:
+            torch.save(point_cloud, model_file)
+
+        blob = bucket.blob(model_path.split("/")[-1])
+        blob.upload_from_filename(model_path)
+
+        return {"message": "3D Model uploaded from base64 successfully!", "model_url": blob.public_url}
+
+    except Exception as e:
+        return {"error": str(e)}
