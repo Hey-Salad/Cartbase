@@ -78,36 +78,52 @@ sampler = PointCloudSampler(
 @app.post("/upload/")
 async def upload_and_generate_3d(file: UploadFile = File(...)):
     try:
-        # Save the uploaded image
         image_path = f"temp/{file.filename}"
         with open(image_path, "wb") as img_file:
             img_file.write(await file.read())
 
-        # Open and convert image
+        print(f"Saved image to {image_path}")
+
         with Image.open(image_path) as img:
             img = img.convert("RGB")
 
-            # Sample 3D point cloud
+            print("Starting point cloud generation...")
             samples = None
             for x in tqdm(sampler.sample_batch_progressive(batch_size=1, model_kwargs=dict(images=[img]))):
                 samples = x
 
-        # Extract point cloud and save to .ply
-        pc = sampler.output_to_point_clouds(samples)[0]
-        fig = plot_point_cloud(pc, grid_size=3, fixed_bounds=((-0.75, -0.75, -0.75),(0.75, 0.75, 0.75)))
+        print("Sampling done, converting to point cloud...")
+        pc_list = sampler.output_to_point_clouds(samples)
+        if not pc_list:
+            raise ValueError("Point cloud conversion failed, got empty list")
+
+        pc = pc_list[0]
 
         base_name = os.path.splitext(os.path.basename(image_path))[0]
         model_path = f"temp/{base_name}.ply"
-        pc.write_ply(model_path)
 
-        # Upload to GCS
+        with open(model_path, "wb") as f:
+            pc.write_ply(f)
+
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"{model_path} was not created.")
+        if os.path.getsize(model_path) == 0:
+            raise ValueError(f"{model_path} is empty. Model generation may have failed.")
+
+        print(f"Uploading {model_path} to GCS as {os.path.basename(model_path)}")
         blob = bucket.blob(os.path.basename(model_path))
         blob.upload_from_filename(model_path)
+        print("Upload to GCS successful!")
 
-        return {"message": "3D Model uploaded successfully!", "model_url": blob.public_url}
+        return {
+            "message": "3D Model uploaded successfully!",
+            "model_url": blob.public_url
+        }
 
     except Exception as e:
+        print(f"🚨 Error during upload: {str(e)}")
         return {"error": str(e)}
+
 
 
 # --- Mock Freshness Detection ---
@@ -164,14 +180,45 @@ async def upload_base64_image(data: Base64Image):
 
         # Create the model path
         model_path = f"temp/{data.object}.ply"
-        pc.write_ply(model_path)
+        with open(model_path, "wb") as f:
+            pc.write_ply(f)
 
-        # Upload the .ply file to Google Cloud Storage
+        if not os.path.exists(model_path):
+            raise FileNotFoundError(f"{model_path} was not created.")
+        if os.path.getsize(model_path) == 0:
+            raise ValueError(f"{model_path} is empty. Model generation may have failed.")
+
+        print(f"Uploading {model_path} to GCS as {os.path.basename(model_path)}")
         blob = bucket.blob(os.path.basename(model_path))
         blob.upload_from_filename(model_path)
+        print("Upload to GCS successful!")
 
-        return {"message": "3D Model uploaded from base64 successfully!", "model_url": blob.public_url}
+        return {
+            "message": "3D Model uploaded successfully!",
+            "model_url": blob.public_url
+        }
 
     except Exception as e:
+        print(f"🚨 Error during upload: {str(e)}")
         return {"error": str(e)}
 
+@app.post("/detect-freshness-base64/")
+async def detect_freshness_base64(data: Base64Image):
+    try:
+        header, encoded = data.image.split(",", 1) if "," in data.image else ("", data.image)
+        image_bytes = base64.b64decode(encoded)
+        image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+
+        freshness_result = predict_freshness(image)
+
+        result_filename = f"{data.object}_freshness.txt"
+        result_path = f"temp/{result_filename}"
+        with open(result_path, "w") as result_file:
+            result_file.write(f"Freshness: {freshness_result}\n")
+
+        blob = bucket.blob(result_filename)
+        blob.upload_from_filename(result_path)
+
+        return {"freshness": freshness_result, "result_url": blob.public_url}
+    except Exception as e:
+        return {"error": str(e)}
