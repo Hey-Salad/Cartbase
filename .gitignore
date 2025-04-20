@@ -5,3 +5,7 @@ secrets/
 node_modules
 node_modules
 .venv
+point_e
+point_e_model_cache
+point_e.egg-info
+Point-e_repo
