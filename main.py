@@ -3,6 +3,9 @@ import io
 import random
 import base64
 import torch
+import numpy as np
+import tensorflow as tf
+import tensorflow_hub as hub
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import HTMLResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,9 +20,37 @@ from point_e.util.plotting import plot_point_cloud
 from point_e.models.configs import MODEL_CONFIGS, model_from_config
 from point_e.models.download import load_checkpoint
 from point_e.diffusion.configs import diffusion_from_config
+from fastapi.middleware.cors import CORSMiddleware
+
 # --- Initialize FastAPI App ---
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+freshness_model = hub.KerasLayer("https://tfhub.dev/google/imagenet/efficientnet_v2_imagenet1k_b0/classification/2")
+
+freshness_labels = ["Fresh", "Slightly Spoiled", "Spoiled"]
+
+def predict_freshness(image: Image.Image) -> str:
+    # Preprocess the image
+    image = image.convert("RGB")
+    image = image.resize((224, 224))
+    image_array = np.array(image).astype(np.float32) / 255.0
+    image_array = np.expand_dims(image_array, axis=0)  # shape: (1, 224, 224, 3)
+
+    # Predict using the model
+    predictions = tf.nn.softmax(freshness_model(image_array)).numpy()
+    predicted_class = np.argmax(predictions)
+
+    # Map to freshness label (placeholder logic)
+    return freshness_labels[predicted_class % len(freshness_labels)]
+
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
@@ -49,7 +80,7 @@ else:
     device = torch.device("cpu")
 print("Using device:", device)
 
-# --- Load Point-E Models (Corrected) ---
+# --- Load Point-E Models ---
 base_name = 'base40M-imagevec'
 
 print('Loading base model...')
@@ -127,9 +158,9 @@ async def upload_and_generate_3d(file: UploadFile = File(...)):
 
 
 # --- Mock Freshness Detection ---
-def predict_freshness(image):
-    classes = ["Fresh", "Slightly Spoiled", "Spoiled"]
-    return random.choice(classes)
+# def predict_freshness(image):
+#    classes = ["Fresh", "Slightly Spoiled", "Spoiled"]
+#    return random.choice(classes)
 
 @app.post("/detect-freshness/")
 async def detect_freshness(file: UploadFile = File(...)):
