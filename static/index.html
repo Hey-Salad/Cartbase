@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Smart Food Inventory</title>
+</head>
+<body>
+  <h1>Upload Food Image</h1>
+  <input type="file" id="fileInput" accept="image/*" />
+  <button onclick="uploadImage()">Upload and Generate 3D Model</button>
+  <button onclick="detectFreshnessOnly()">Detect Freshness Only</button>
+
+  <p id="status"></p>
+  <img id="preview" src="" alt="Uploaded Image Preview" width="200" />
+  <p id="cloudUrl"></p>
+  <p id="freshness"></p>
+
+  <script>
+    async function uploadImage() {
+      const fileInput = document.getElementById("fileInput");
+      const status = document.getElementById("status");
+      const preview = document.getElementById("preview");
+      const cloudUrl = document.getElementById("cloudUrl");
+      const freshness = document.getElementById("freshness");
+
+      if (!fileInput.files[0]) {
+        status.textContent = "Please select a file.";
+        return;
+      }
+
+      status.textContent = "Uploading and generating 3D model...";
+      freshness.textContent = "";
+      cloudUrl.textContent = "";
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+
+      try {
+        const response = await fetch("/upload/", {
+          method: "POST",
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          status.textContent = "Upload successful!";
+          preview.src = URL.createObjectURL(fileInput.files[0]);
+          cloudUrl.innerHTML = `☁️ Cloud URL: <a href="${result.model_url}" target="_blank">${result.model_url}</a>`;
+        } else {
+          status.textContent = `❌ Error: ${result.error || "Failed to upload"}`;
+        }
+      } catch (err) {
+        status.textContent = `❌ Upload failed: ${err.message}`;
+      }
+    }
+
+    async function detectFreshnessOnly() {
+      const fileInput = document.getElementById("fileInput");
+      const freshness = document.getElementById("freshness");
+      const status = document.getElementById("status");
+
+      if (!fileInput.files[0]) {
+        status.textContent = "Please select a file to detect freshness.";
+        return;
+      }
+
+      freshness.textContent = "🔍 Detecting freshness...";
+      const formData = new FormData();
+      formData.append("file", fileInput.files[0]);
+
+      try {
+        const response = await fetch("/detect-freshness/", {
+          method: "POST",
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          freshness.innerHTML = `🍏 Freshness: <strong>${result.freshness}</strong><br>📄 <a href="${result.result_url}" target="_blank">View Result File</a>`;
+        } else {
+          freshness.innerHTML = `⚠️ Freshness detection failed: ${result.error}`;
+        }
+      } catch (err) {
+        freshness.textContent = `❌ Detection failed: ${err.message}`;
+      }
+    }
+  </script>
+</body>
+</html>
