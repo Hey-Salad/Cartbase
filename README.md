@@ -85,8 +85,6 @@ Accepts a base64-encoded image and predicts freshness.
 - `main.py`: Main FastAPI app
 
 ## Future Enhancements
-
-- Add real-time food detection using YOLO
 - Improve freshness classification with custom fine-tuned models
 - Add logging and analytics dashboard
 - Streamline frontend with live camera feed and real-time status
