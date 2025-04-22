@@ -1,0 +1,372 @@
+[
+    {
+        "id": "7e84a5585368eb35",
+        "type": "tab",
+        "label": "Flow 1",
+        "disabled": false,
+        "info": "",
+        "env": []
+    },
+    {
+        "id": "73e2da11b62f4155",
+        "type": "camera",
+        "z": "7e84a5585368eb35",
+        "option": 0,
+        "client": "61132fa5b3e4b990",
+        "audio": false,
+        "volume": "50",
+        "x": 210,
+        "y": 200,
+        "wires": [
+            [
+                "9664076d636d2f3a"
+            ]
+        ]
+    },
+    {
+        "id": "9664076d636d2f3a",
+        "type": "model",
+        "z": "7e84a5585368eb35",
+        "name": "",
+        "uri": "",
+        "model": "yolo11n_cv181x_int8.cvimodel",
+        "tscore": 0.45,
+        "tiou": 0.25,
+        "debug": false,
+        "trace": true,
+        "counting": true,
+        "classes": "person,bicycle,car,motorcycle,airplane,bus,train,truck,boat,traffic light,fire hydrant,stop sign,parking meter,bench,bird,cat,dog,horse,sheep,cow,elephant,bear,zebra,giraffe,backpack,umbrella,handbag,tie,suitcase,frisbee,skis,snowboard,sports ball,kite,baseball bat,baseball glove,skateboard,surfboard,tennis racket,bottle,wine glass,cup,fork,knife,spoon,bowl,banana,apple,sandwich,orange,broccoli,carrot,hot dog,pizza,donut,cake,chair,couch,potted plant,bed,dining table,toilet,tv,laptop,mouse,remote,keyboard,cell phone,microwave,oven,toaster,sink,refrigerator,book,clock,vase,scissors,teddy bear,hair drier,toothbrush,food",
+        "splitter": "49.28125,0,49.28125,100",
+        "client": "61132fa5b3e4b990",
+        "x": 410,
+        "y": 200,
+        "wires": [
+            [
+                "84911798d022c437",
+                "3d41939e958590d4"
+            ]
+        ]
+    },
+    {
+        "id": "84911798d022c437",
+        "type": "preview",
+        "z": "7e84a5585368eb35",
+        "name": "",
+        "active": true,
+        "pass": false,
+        "outputs": 0,
+        "x": 920,
+        "y": 200,
+        "wires": []
+    },
+    {
+        "id": "b4c4d43e5bc5d06f",
+        "type": "http request",
+        "z": "7e84a5585368eb35",
+        "name": "",
+        "method": "POST",
+        "ret": "bin",
+        "paytoqs": "ignore",
+        "url": "Localhost:8000",
+        "tls": "",
+        "persist": false,
+        "proxy": "",
+        "insecureHTTPParser": false,
+        "authType": "",
+        "senderr": false,
+        "headers": [],
+        "x": 550,
+        "y": 420,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "797398c1b2b341b8",
+        "type": "file",
+        "z": "7e84a5585368eb35",
+        "name": "",
+        "filename": "C:\\Users\\Asoga\\Pictures\\captured_image.jpg",
+        "filenameType": "str",
+        "appendNewline": true,
+        "createDir": false,
+        "overwriteFile": "false",
+        "encoding": "binary",
+        "x": 230,
+        "y": 700,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "13790ecd76e9bf7e",
+        "type": "light",
+        "z": "7e84a5585368eb35",
+        "light": false,
+        "x": 610,
+        "y": 140,
+        "wires": []
+    },
+    {
+        "id": "3d41939e958590d4",
+        "type": "function",
+        "z": "7e84a5585368eb35",
+        "name": "capture_food",
+        "func": "/*const selectModel = flow.get(\"option_model\")\nlet currentModel = \"Current \"\nlet object = \"\"\nnode.log(currentModel);\nconst detections = msg.payload?.data?.labels ?? []\nif (!Array.isArray(detections)) {\n        console.error(\"Invalid input: detections should be an array.\");\n        return [];\n    }\n\n    // Iterate through the detections and extract information\n    const objectsInfo = detections.map((detection, index) => {\n        const { class: objectClass, confidence, boundingBox } = detection;\n\n        // Validate the detection object structure\n        if (!objectClass || !confidence || !boundingBox) {\n            console.warn(`Detection at index ${index} is missing required properties.`);\n            return null;\n        }\n\n        return {\n            class: objectClass,\n            confidence: confidence,\n            boundingBox: boundingBox, // Example: { x: 10, y: 20, width: 100, height: 50 }\n        };\n    });\n\n    // Filter out any invalid detections\n    return objectsInfo.filter(info => info !== null);\nreturn selectModel;*/\n\nconst foodItems = [\"banana\", \"apple\", \"orange\", \"bowl\", \"bottle\"];\n//need this as a global variable\n//const detected = flow.get('detected')\nlet detected = flow.get('detected');\nconst detection = msg.payload?.data?.labels ??[];\n\nif (detection && detection.class && detection.confidence) {\n    //msg.payload = `Object: ${detection.class}, Confidence: ${(detection.confidence * 100).toFixed(2)}%`;\n    node.warn(\"my warning\");\n}else if(detection){\n    //node.warn(detection[0]);\n    \n    //msg.payload = {\n    //    'object' : detection[0]\n    //}\n    var newMsg = { payload: detection[0] };\n    if(foodItems.includes(detection[0])){\n        //node.warn(\"Indentified food item \"+ detection[0]);\n        //capture image and send it\n\n        //The model node sends the image in the payload\n        //inside data.image\n        //node.warn(flow.get('detected'));\n        //node.warn(msg.payload?.data?.image);\n        if(!detected.includes(detection[0])){\n            //haven't detected this food before\n            //detected.push(detection[0]);\n            //flow.set('detected', (flow.get('detected')).addFood(detection[0], 1))\n\n            detected.push(detection[0])\n            flow.set('detected', detected)\n            node.warn(\"Got new food \"+ detection[0]);\n            //node.warn(flow.get('detected'));\n            const img = msg.payload?.data?.image\n            msg.payload = {\n                object : detection[0],\n                image : img\n            }\n            node.send(msg);\n        }\n\n        //have to send this image somewhere\n        //to render it and verify\n    }\n    else{\n        //node.warn(detection[0]+\" is not a food item\");\n    }\n    //return newMsg;\n\n} \nelse {\n    msg.payload = \"No valid detection data received.\";\n    node.warn(\"No object\");\n    \n}\n//node.warn(msg);\n//node.warn(msg.payload['object']);\n//node.send(msg);\n//return msg;",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "// Code added here will be run once\n// whenever the node is started.\n\n//set up a flow context array\nlet detectedFoods = [];\n\ndetectedFoods.push(\"Placeholder\");\n\nflow.set('detected' , detectedFoods);\n//flow.set('detected', [\"Placeholder\"]);\n\n//option 1: make a string seperated by commas\n\n//option 2: make an object and store stuff in that\n/*let detectedFoods = {};\n\nflow.set('detected', detectedFoods);\n\nfunction addFood(item, value){\n    return detectedFoods[item] = value\n}\n\nfunction getFood(item){\n    return detectedFoods[item]\n}\n*/",
+        "finalize": "",
+        "libs": [],
+        "x": 190,
+        "y": 320,
+        "wires": [
+            [
+                "e656bef1ce367c2b"
+            ]
+        ]
+    },
+    {
+        "id": "1f7c6ba2727dd113",
+        "type": "ui-text",
+        "z": "7e84a5585368eb35",
+        "group": "94320976eef32c1c",
+        "order": 1,
+        "width": 0,
+        "height": 0,
+        "name": "yed",
+        "label": "check",
+        "format": "{{msg.payload}}",
+        "layout": "col-center",
+        "style": false,
+        "font": "",
+        "fontSize": 16,
+        "color": "#717171",
+        "wrapText": false,
+        "className": "",
+        "x": 150,
+        "y": 600,
+        "wires": []
+    },
+    {
+        "id": "a0d833a8a1d21111",
+        "type": "debug",
+        "z": "7e84a5585368eb35",
+        "name": "debug 1",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 360,
+        "y": 500,
+        "wires": []
+    },
+    {
+        "id": "5f625fa02198b8ef",
+        "type": "switch",
+        "z": "7e84a5585368eb35",
+        "name": "",
+        "property": "payload",
+        "propertyType": "msg",
+        "rules": [
+            {
+                "t": "eq",
+                "v": "\"person\"",
+                "vt": "str"
+            },
+            {
+                "t": "eq",
+                "v": "",
+                "vt": "str"
+            }
+        ],
+        "checkall": "true",
+        "repair": false,
+        "outputs": 2,
+        "x": 490,
+        "y": 760,
+        "wires": [
+            [],
+            []
+        ]
+    },
+    {
+        "id": "d23548e63604955f",
+        "type": "save",
+        "z": "7e84a5585368eb35",
+        "name": "save",
+        "slice": "300",
+        "storage": "local",
+        "duration": 0,
+        "start": true,
+        "client": "61132fa5b3e4b990",
+        "x": 310,
+        "y": 760,
+        "wires": []
+    },
+    {
+        "id": "b7c4389c76c2a283",
+        "type": "ui-notification",
+        "z": "7e84a5585368eb35",
+        "ui": "9d738dff9d4d472d",
+        "position": "center center",
+        "colorDefault": true,
+        "color": "#000000",
+        "displayTime": "3",
+        "showCountdown": true,
+        "outputs": 1,
+        "allowDismiss": true,
+        "dismissText": "Close",
+        "allowConfirm": false,
+        "confirmText": "Confirm",
+        "raw": false,
+        "className": "",
+        "name": "",
+        "x": 510,
+        "y": 700,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "d577303d91cd8568",
+        "type": "file",
+        "z": "7e84a5585368eb35",
+        "name": "detected food items",
+        "filename": "detected",
+        "filenameType": "env",
+        "appendNewline": true,
+        "createDir": true,
+        "overwriteFile": "false",
+        "encoding": "none",
+        "x": 310,
+        "y": 620,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "e656bef1ce367c2b",
+        "type": "function",
+        "z": "7e84a5585368eb35",
+        "name": "send request",
+        "func": "//check if payload contains the object label and image (it must, this must never fail)\nif (!msg.payload || !msg.payload.object || !msg.payload.image) {\n    node.error(\"Payload must contain both 'label' and 'image'\");\n    return null;\n}\n\n//Prepare for the HTTP request\nmsg.headers = {\n    \"Content-Type\": \"application/json\" //Set the content type to JSON\n};\n\nmsg.payload = {\n    object: msg.payload.object, //object label\n    image: msg.payload.image  //Base64 image string\n};\n\n//The HTTP request node will use this payload\n//return msg;\nnode.warn(msg);\nnode.send(msg);",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 380,
+        "wires": [
+            [
+                "b4c4d43e5bc5d06f",
+                "a0d833a8a1d21111"
+            ]
+        ]
+    },
+    {
+        "id": "61132fa5b3e4b990",
+        "type": "sscma",
+        "host": "localhost",
+        "mqttport": "",
+        "apiport": "",
+        "clientid": "recamera",
+        "username": "recamera",
+        "password": "heySalad@UM1"
+    },
+    {
+        "id": "94320976eef32c1c",
+        "type": "ui-group",
+        "name": "Group 1",
+        "page": "5f841e5a5f44e087",
+        "width": "6",
+        "height": "1",
+        "order": 1,
+        "showTitle": true,
+        "className": "",
+        "visible": "true",
+        "disabled": "false",
+        "groupType": "default"
+    },
+    {
+        "id": "9d738dff9d4d472d",
+        "type": "ui-base",
+        "name": "My Dashboard",
+        "path": "/dashboard",
+        "appIcon": "",
+        "includeClientData": true,
+        "acceptsClientConfig": [
+            "ui-notification",
+            "ui-control"
+        ],
+        "showPathInSidebar": false,
+        "headerContent": "page",
+        "navigationStyle": "default",
+        "titleBarStyle": "default",
+        "showReconnectNotification": true,
+        "notificationDisplayTime": 1,
+        "showDisconnectNotification": true
+    },
+    {
+        "id": "5f841e5a5f44e087",
+        "type": "ui-page",
+        "name": "Page 1",
+        "ui": "9d738dff9d4d472d",
+        "path": "/page1",
+        "icon": "home",
+        "layout": "grid",
+        "theme": "4987fcf4a4e06de0",
+        "breakpoints": [
+            {
+                "name": "Default",
+                "px": 0,
+                "cols": 3
+            },
+            {
+                "name": "Tablet",
+                "px": 576,
+                "cols": 6
+            },
+            {
+                "name": "Small Desktop",
+                "px": 768,
+                "cols": 9
+            },
+            {
+                "name": "Desktop",
+                "px": 1024,
+                "cols": 12
+            }
+        ],
+        "order": 1,
+        "className": "",
+        "visible": "true",
+        "disabled": "false"
+    },
+    {
+        "id": "4987fcf4a4e06de0",
+        "type": "ui-theme",
+        "name": "Default Theme",
+        "colors": {
+            "surface": "#ffffff",
+            "primary": "#0094CE",
+            "bgPage": "#eeeeee",
+            "groupBg": "#ffffff",
+            "groupOutline": "#cccccc"
+        },
+        "sizes": {
+            "density": "default",
+            "pagePadding": "12px",
+            "groupGap": "12px",
+            "groupBorderRadius": "4px",
+            "widgetGap": "12px"
+        }
+    }
+]
