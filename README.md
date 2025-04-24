@@ -5,6 +5,8 @@
 
 This FastAPI-based backend powers a Smart Food Inventory System that captures images from a reCamera (via Node-RED), processes them into 3D point clouds using OpenAI's Point-E model, and analyzes the freshness of food using a TensorFlow model from TensorFlow Hub. The resulting data is stored in Google Cloud Storage and served via RESTful endpoints.
 To set up, create a new bucket for where you want the images and data to be uploaded and save the resulting json credentials in a secure directory. You can change main.py to point your credentials to that json file wherever you have it saved.  
+
+[reCamera Startup Guide](https://wiki.seeedstudio.com/recamera_getting_started/)
 ## Features
 
 - **Image Upload & Storage**: Receives image uploads and saves them to a local `temp` directory and Google Cloud Storage.
